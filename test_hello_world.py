@@ -1,19 +1,22 @@
 # 0. imports
-import torch
-from transformers import GPT2Tokenizer
-import numpy as np
-
 from typing import Optional
-from test_util import tokenizer
-from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer
+
+import numpy as np
+import torch
+from transformers import AutoTokenizer, GPT2Tokenizer
+
+# from test_util import tokenizer
+from trl import AutoModelForCausalLMWithValueHead, ExtDPOTrainer, PPOConfig, PPOTrainer
 
 
 # 1. load a pretrained model
-model_name_or_path = "NlpHUST/gpt2-vietnamese"
+# model_name_or_path = "NlpHUST/gpt2-vietnamese"
+model_name_or_path = "tmp_trainer/checkpoint-37500"
 # model_name_or_path = "gpt2"
 model = AutoModelForCausalLMWithValueHead.from_pretrained(model_name_or_path)
 reward_model = AutoModelForCausalLMWithValueHead.from_pretrained(model_name_or_path)
 model_ref = AutoModelForCausalLMWithValueHead.from_pretrained(model_name_or_path)
+tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
 tokenizer.pad_token = tokenizer.eos_token
 
 # 2. initialize trainer
