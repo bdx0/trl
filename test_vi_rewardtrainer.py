@@ -2,7 +2,7 @@
 # https://python.plainenglish.io/building-a-reward-model-for-your-llm-using-rlhf-in-python-49abaf4906f
 import pandas as pd
 from datasets import Dataset, load_dataset
-from transformers import GPT2LMHeadModel
+from transformers import GPT2LMHeadModel, AutoModelForSequenceClassification, pipeline
 import numpy as np
 
 from test_util import tokenizer
@@ -20,14 +20,14 @@ reward_config = RewardConfig(
     evaluation_strategy="no",
     max_length=512,
     remove_unused_columns=False,
-    optim="adamw_torch",   logging_steps=500,
+    optim="adamw_torch",
+    logging_steps=500,
 )
 
 train_dataset = load_dataset("Anthropic/hh-rlhf", split="train[:10%]")
 eval_dataset = load_dataset("Anthropic/hh-rlhf", split="train[1%:]")
 
 if False:
-
     ###########
     # conver string to token with pandas
     ###########
@@ -50,16 +50,15 @@ if False:
         }
 
     # convert pandas to dataset
-    data = Dataset.from_pandas(df[["chosen", "rejected"]].apply(
-        lambda x: create_input(*x), axis=1, result_type="expand"))
+    data = Dataset.from_pandas(
+        df[["chosen", "rejected"]].apply(lambda x: create_input(*x), axis=1, result_type="expand")
+    )
     print(data[:2])
 
     # pre process data
     ###############
 else:
-
-    kwargs = {"padding": "max_length", "truncation": True,
-              "max_length": 512, "return_tensors": "pt"}
+    kwargs = {"padding": "max_length", "truncation": True, "max_length": 512, "return_tensors": "pt"}
     # Tokenize chosen/rejected pairs of inputs
     # Adapt this section to your needs for custom datasets
 
@@ -73,17 +72,13 @@ else:
             "attention_mask_rejected": [],
         }
         for chosen, rejected in zip(examples["chosen"], examples["rejected"]):
-            tokenized_chosen = tokenizer(chosen,  **kwargs)
-            tokenized_rejected = tokenizer(rejected,  **kwargs)
+            tokenized_chosen = tokenizer(chosen, **kwargs)
+            tokenized_rejected = tokenizer(rejected, **kwargs)
 
-            new_examples["input_ids_chosen"].append(
-                tokenized_chosen["input_ids"])
-            new_examples["attention_mask_chosen"].append(
-                tokenized_chosen["attention_mask"])
-            new_examples["input_ids_rejected"].append(
-                tokenized_rejected["input_ids"])
-            new_examples["attention_mask_rejected"].append(
-                tokenized_rejected["attention_mask"])
+            new_examples["input_ids_chosen"].append(tokenized_chosen["input_ids"])
+            new_examples["attention_mask_chosen"].append(tokenized_chosen["attention_mask"])
+            new_examples["input_ids_rejected"].append(tokenized_rejected["input_ids"])
+            new_examples["attention_mask_rejected"].append(tokenized_rejected["attention_mask"])
 
         return new_examples
 
@@ -97,11 +92,11 @@ else:
 
 def add_margin(row):
     # Assume you have a score_chosen and score_rejected columns that you want to use to compute the margin
-    return {'margin': row['score_chosen'] - row['score_rejected']}
+    return {"margin": row["score_chosen"] - row["score_rejected"]}
 
 
 # data = data.map(add_margin)
-model = GPT2LMHeadModel.from_pretrained("gpt2")  # "EleutherAI/gpt-neo-125m",
+model = AutoModelForSequenceClassification.from_pretrained("gpt2")  # "EleutherAI/gpt-neo-125m",
 model.resize_token_embeddings(len(tokenizer))
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
@@ -118,3 +113,11 @@ trainer = RewardTrainer(
 
 trainer.train()
 # trainer.train(resume_from_checkpoint=True)
+text = "Xin chào"
+# with torch.no_grad():
+#     logits = model(**inputs).logits
+# predicted_class_id = logits.argmax().item()
+# model.config.id2label[predicted_class_id]
+
+classifier = pipeline("sentiment-analysis", model="./tmp_reward")
+classifier(text)

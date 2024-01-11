@@ -1,0 +1,101 @@
+# 0. imports
+import torch
+from transformers import GPT2Tokenizer
+import numpy as np
+
+from typing import Optional
+from test_util import tokenizer
+from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer
+
+
+# 1. load a pretrained model
+model_name_or_path = "NlpHUST/gpt2-vietnamese"
+# model_name_or_path = "gpt2"
+model = AutoModelForCausalLMWithValueHead.from_pretrained(model_name_or_path)
+reward_model = AutoModelForCausalLMWithValueHead.from_pretrained(model_name_or_path)
+model_ref = AutoModelForCausalLMWithValueHead.from_pretrained(model_name_or_path)
+tokenizer.pad_token = tokenizer.eos_token
+
+# 2. initialize trainer
+ppo_config = {"batch_size": 1}
+config = PPOConfig(**ppo_config)
+ppo_trainer: PPOTrainer = PPOTrainer(config, model, model_ref, tokenizer)
+
+# 3. encode a query
+# query_txt = "This morning I went to the "
+# query_tensor = tokenizer.encode(query_txt, return_tensors="pt").to(model.pretrained_model.device)
+
+# 4. generate model response
+generation_kwargs = {
+    "min_length": -1,
+    "top_k": 0.0,
+    "top_p": 1.0,
+    "do_sample": True,
+    "pad_token_id": tokenizer.eos_token_id,
+    "max_new_tokens": 100,
+}
+# response_tensor = ppo_trainer.generate([item for item in query_tensor], return_prompt=False, **generation_kwargs)
+# response_txt = tokenizer.decode(response_tensor[0])
+
+# 5. define a reward for response
+# (this could be any reward such as human feedback or output from another model)
+# reward = [torch.tensor(1.0, device=model.pretrained_model.device)]
+###############################
+# reward from human feedback or model feedback
+###############################
+# print(reward)
+
+# 6. train model with ppo
+# train_stats = ppo_trainer.step([query_tensor[0]], [response_tensor[0]], reward)
+# print(train_stats)
+
+
+def get_model_response(trainer: PPOTrainer, prompt: Optional[str]):
+    # encoded_input = tokenizer(prompt, return_tensors="pt")
+    # ouptut = model.pretrained_model(**encoded_input, pad_token_id=tokenizer.eos_token_id)
+    # return tokenizer.batch_decode(output)
+    prompt_tensor = tokenizer(prompt, return_tensors="pt").to(model.pretrained_model.device)["input_ids"]
+    response_tensor = trainer.generate([t for t in prompt_tensor], return_prompt=False, **generation_kwargs)
+    response_txt = tokenizer.batch_decode(response_tensor)
+    return response_txt, prompt_tensor, response_tensor
+
+
+reward_ds = []
+
+prompt = None
+
+while True:
+    if not prompt or len(prompt) == 0 or np.mean(rewards) > 5 or np.mean(rewards) < -5:
+        prompt = input("> ")
+    if len(prompt) > 0:
+        resp, qsor, rsor = get_model_response(trainer=ppo_trainer, prompt=prompt)
+        rewards = []
+
+        # reward with hf first
+        for i, (q, r, rt) in enumerate(zip(qsor, rsor, resp)):
+            print(f"< {rt}")
+            reward = float(input("<< please, reward for this response: "))
+            reward_ds.append((q, r, rt, reward))
+            rewards.append(reward)
+        if reward < -1000:
+            continue
+
+        # step
+        for i, a in enumerate(reward_ds):
+            print(f"step back: {i}", end="\r")
+            train_stats = ppo_trainer.step(
+                [a[0]],
+                [a[1]],
+                [torch.tensor(a[3], device=model.pretrained_model.device)],
+            )
+
+        print("\n")
+        # 1. get prompt
+        # 2. get model response
+        # 3. get reward from model for response
+        # 4. check: does the human agrees with reward from model
+        #    4.1 Yes, fast train ppo
+        #    4.2 NO,
+        #        4.2.1 ask reward from human and slow train ppo with new reward,
+        #        4.2.2 train reward model in background if sum(reward) > 10
+        # 5. wait for learning, go to step 2
