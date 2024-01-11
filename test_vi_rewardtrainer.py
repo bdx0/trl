@@ -1,9 +1,9 @@
 # https://medium.com/towards-generative-ai/reward-model-training-2209d1befb5f
 # https://python.plainenglish.io/building-a-reward-model-for-your-llm-using-rlhf-in-python-49abaf4906f
+import numpy as np
 import pandas as pd
 from datasets import Dataset, load_dataset
-from transformers import GPT2LMHeadModel, AutoModelForSequenceClassification, pipeline
-import numpy as np
+from transformers import AutoModelForSequenceClassification, pipeline
 
 from test_util import tokenizer
 from trl import RewardTrainer
@@ -23,6 +23,18 @@ reward_config = RewardConfig(
     optim="adamw_torch",
     logging_steps=500,
 )
+
+
+# data = data.map(add_margin)
+# model_name_or_path = "facebook/opt-350m"
+model_name_or_path = "gpt2"
+# model_name_or_path = "EleutherAI/gpt-neo-125m"
+model = AutoModelForSequenceClassification.from_pretrained(model_name_or_path, num_labels=1)  # "EleutherAI/gpt-neo-125m",
+# tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+model.resize_token_embeddings(len(tokenizer))
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
+    model.config.pad_token_id = model.config.eos_token_id
 
 train_dataset = load_dataset("Anthropic/hh-rlhf", split="train[:10%]")
 eval_dataset = load_dataset("Anthropic/hh-rlhf", split="train[1%:]")
@@ -94,13 +106,7 @@ def add_margin(row):
     # Assume you have a score_chosen and score_rejected columns that you want to use to compute the margin
     return {"margin": row["score_chosen"] - row["score_rejected"]}
 
-
 # data = data.map(add_margin)
-model = AutoModelForSequenceClassification.from_pretrained("gpt2")  # "EleutherAI/gpt-neo-125m",
-model.resize_token_embeddings(len(tokenizer))
-if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
-    model.config.pad_token_id = model.config.eos_token_id
 
 # Step 5: Define the Trainer
 trainer = RewardTrainer(
